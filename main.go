@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,7 +14,7 @@ import (
 var (
 	dsn string
 	Version = "0.0.2"
-	failSlaveNotRunning bool
+	replicationLagLimit = 5
 )
 
 func main() {
@@ -23,9 +22,10 @@ func main() {
 	var showVersion bool
 	flag.IntVar(&port, "port", 5000, "http listen port number")
 	flag.StringVar(&dsn, "dsn", "root:@tcp(127.0.0.1:3306)/?charset=utf8", "MySQL DSN")
+	flag.IntVar(&replicationLagLimit, "lag-limit", 5, "replication lag limit")
 	flag.BoolVar(&showVersion, "version", false, "show version")
-	flag.BoolVar(&failSlaveNotRunning, "fail-slave-not-ruuning", true, "returns 500 if the slave is not running");
 	flag.Parse()
+
 	if showVersion {
 		fmt.Printf("version %s\n", Version)
 		return
@@ -33,6 +33,7 @@ func main() {
 
 	log.Printf("Listing port %d", port)
 	log.Printf("dsn %s", dsn)
+	log.Printf("lag-limit %ds", replicationLagLimit)
 
 	http.HandleFunc("/", handler)
 	addr := fmt.Sprintf(":%d", port)
@@ -58,7 +59,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	// カラム数と同じ要素数のsliceを用意して sql.RawBytes のポインタで初期化しておく
 	columns, _ := rows.Columns()
 	values := make([]interface{}, len(columns))
 	for i, _ := range values {
@@ -72,7 +72,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 結果を返す用のmapに値を詰める
 	slaveInfo := make(map[string]interface{})
 	for i, name := range columns {
 		bp := values[i].(*sql.RawBytes)
@@ -84,14 +83,19 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			slaveInfo[name] = vi
 		}
 	}
-	if failSlaveNotRunning && slaveInfo["Seconds_Behind_Master"] == "" {
+
+	if (slaveInfo["Slave_IO_Running"] != "Yes" || slaveInfo["Slave_SQL_Running"] != "Yes") {
 		serverError(w, errors.New("Slave is not running."))
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	encoder := json.NewEncoder(w)
-	encoder.Encode(slaveInfo)
+	if (int(slaveInfo["Seconds_Behind_Master"].(int64))  > replicationLagLimit) {
+		error := errors.New(fmt.Sprintf("Replication lag exceeds the limit of %d", replicationLagLimit))
+		serverError(w, error)
+		return
+	}
+
+	w.Write([]byte("OK"))
 }
 
 func serverError(w http.ResponseWriter, err error) {
