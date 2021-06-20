@@ -29,24 +29,12 @@ $ mysql-slave-healthcheck-agent
 ```
 
 ```
-$ curl localhost:5000 | jq .
-{
-  "Connect_Retry": 60,
-  "Exec_Master_Log_Pos": 1048,
-  "Last_Errno": 0,
-  "Last_Error": "",
-  "Master_Host": "db-master",
-  "Master_Log_File": "mysql-bin.000006",
-  "Master_Port": 3306,
-  ...
-  "Until_Log_File": "",
-  "Until_Log_Pos": 0
-}
-```
+$ curl localhost:5000
+OK
 
-* The query "SHOW SLAVE STATUS" was succeeded, return HTTP status 200 and JSON.
+* The query "SHOW SLAVE STATUS" was succeeded, return HTTP status 200.
 * If could not connect to the MySQL or the MySQL is not a slave, return HTTP status 500.
-* If slave is not running, return HTTP status 500. When the option -fail-slave-not-ruuning=false is specified, return 200.
+* If slave is not running or the replication lag exceeds the limit, return HTTP status 500
 
 Options
 -------
@@ -55,7 +43,7 @@ Options
 * -dsn : Data Source Name for MySQL. default "root:@tcp(127.0.0.1:3306)/?charset=utf8"
   See also https://github.com/go-sql-driver/mysql#dsn-data-source-name
   mysql's user must have a privilege of "REPLICATION CLIENT".
-* --fail-slave-not-ruuning=true: returns 500 if the slave is not running
+* --lag-limit : max replication lag for healthy slave
 
 How to build
 ------------
