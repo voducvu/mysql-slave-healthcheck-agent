@@ -1,4 +1,4 @@
-module github.com/voducvu/mysqlSlaveCheck
+module github.com/voducvu/mysql-slave-healthcheck-agent
 
 go 1.16
 
